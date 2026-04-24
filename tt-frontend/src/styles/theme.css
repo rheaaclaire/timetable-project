@@ -1,0 +1,13 @@
+:root {
+  --light-purple: #f3e8ff;
+  --dark-purple: #6b21a8;
+  --card-white: #ffffff;
+  --text-dark: #1f2937;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background-color: var(--light-purple);
+  color: var(--text-dark);
+}

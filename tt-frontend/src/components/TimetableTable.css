@@ -1,0 +1,37 @@
+.tt-table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-top: 20px;
+  background-color: #f7f3ff;
+}
+
+.tt-table th,
+.tt-table td {
+  border: 1px solid #999;
+  padding: 8px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.tt-table th {
+  background-color: #6a5acd;
+  color: white;
+}
+
+.day {
+  background-color: #b8a9f3;
+  font-weight: bold;
+}
+
+.break {
+  background-color: #ddd;
+  font-weight: bold;
+}
+
+
+
+
+
+
+
+
