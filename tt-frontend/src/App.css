@@ -1,0 +1,39 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f3eaff;
+}
+
+.layout {
+  display: flex;
+}
+
+.sidebar {
+  width: 220px;
+  background: #6a1bb1;
+  color: white;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+.sidebar h2 {
+  margin-bottom: 20px;
+}
+
+.sidebar a {
+  display: block;
+  color: white;
+  text-decoration: none;
+  margin-bottom: 12px;
+  padding: 8px;
+  border-radius: 6px;
+}
+
+.sidebar a:hover {
+  background: #5a1499;
+}
+
+.content {
+  flex: 1;
+  padding: 30px;
+}

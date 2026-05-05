@@ -1,0 +1,4 @@
+useEffect(() => {
+  axios.get(`/api/notifications/${user}`)
+    .then(res => setNotifications(res.data));
+}, []);

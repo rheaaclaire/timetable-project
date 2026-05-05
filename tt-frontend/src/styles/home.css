@@ -1,0 +1,38 @@
+.home-container {
+  display: grid;
+  gap: 24px;
+}
+
+.welcome-text {
+  margin: 0;
+  font-size: clamp(2rem, 3vw, 3rem);
+  line-height: 1.05;
+  color: #16213e;
+}
+
+.highlight-box {
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.34), transparent 34%),
+    linear-gradient(135deg, #163a5f, #2f6f8f 58%, #f2a65a);
+  color: white;
+  padding: 36px 40px;
+  border-radius: 24px;
+  width: 100%;
+  max-width: 780px;
+  box-shadow: 0 24px 50px rgba(22, 33, 62, 0.18);
+}
+
+.highlight-box h2 {
+  margin: 0;
+  font-size: clamp(1.8rem, 2.6vw, 2.8rem);
+  max-width: 12ch;
+  line-height: 1.05;
+}
+
+.highlight-box p {
+  margin: 14px 0 0;
+  font-size: 1rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  opacity: 0.92;
+}
