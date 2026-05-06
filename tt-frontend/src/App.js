@@ -16,7 +16,7 @@ function App() {
   const [refreshToken, setRefreshToken] = useState(0);
 
   const renderPage = () => {
-    if (page === "home") return <Home />;
+    if (page === "home") return <Home department={department} year={year} semester={semester} />;
     if (page === "upload") return <Upload department={department} year={year} semester={semester} />;
     if (page === "generate") {
       return (

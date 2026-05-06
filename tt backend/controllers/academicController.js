@@ -2,6 +2,18 @@
 const XLSX = require("xlsx");
 const { generateEmptySlots, generateFourthYearSlots, generateTimetable } = require("../services/slotEngine");
 
+function query(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.query(sql, params, (err, result) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(result);
+    });
+  });
+}
+
 function normalizeDepartment(value) {
   return String(value || "ECS").trim().toUpperCase();
 }
@@ -143,89 +155,98 @@ const getSubjectsController = (req, res) => {
   });
 };
 
-const generateTimetableController = (req, res) => {
-  const { year, semester } = req.body;
-  const department = normalizeDepartment(req.body.department);
-
-  if (!year || !semester) {
-    return res.status(400).json({ message: "year & semester required" });
-  }
-
+async function buildTimetableForSelection(department, year, semester) {
   const subjectSql = `
     SELECT name, hours_per_week AS hoursPerWeek, type, faculty, is_major_minor, closes_day
     FROM subjects
     WHERE department = ? AND year = ? AND semester = ?
   `;
+  const subjects = await query(subjectSql, [department, year, semester]);
 
-  db.query(subjectSql, [department, year, semester], (err, subjects) => {
-    if (err) {
-      console.error(err);
-      return res.status(500).json({ message: "Subject fetch failed" });
-    }
+  if (!subjects.length) {
+    const error = new Error("No subjects found");
+    error.statusCode = 400;
+    throw error;
+  }
 
-    if (!subjects.length) {
-      return res.status(400).json({ message: "No subjects found" });
-    }
-
-    const lockSql = `
-      SELECT faculty, day, time
-      FROM timetable_slots
-      WHERE semester = ?
-        AND department <> ?
-        AND faculty IS NOT NULL
-        AND faculty <> ''
-    `;
-
-    db.query(lockSql, [semester, department], (lockError, lockedRows) => {
-      if (lockError) {
-        console.error(lockError);
-        return res.status(500).json({ message: "Faculty lock fetch failed" });
-      }
-
-      const lockedFacultyBookings = lockedRows.map((slot) => {
-        return `${slot.faculty}__${slot.day}__${slot.time}`;
-      });
-
-      const timetable = generateTimetable(
-        subjects,
-        Number(year) === 4 ? generateFourthYearSlots() : generateEmptySlots(),
-        {
-        lockedFacultyBookings
-        }
-      );
-
-      if (!timetable) {
-        return res.status(400).json({
-          message: "Could not generate a timetable with the current constraints"
-        });
-      }
-
-      const rowsToInsert = timetable
-        .filter((slot) => slot.subject && slot.subject !== "BREAK" && slot.subject !== "LUNCH")
-        .map((slot) => [department, year, semester, slot.day, slot.time, slot.subject, slot.faculty || null]);
-
-      db.query("DELETE FROM timetable_slots WHERE department = ? AND year = ? AND semester = ?", [department, year, semester], (deleteError) => {
-        if (deleteError) {
-          console.error("DELETE ERROR:", deleteError);
-          return res.status(500).json({ message: "Failed to replace old timetable" });
-        }
-
-        db.query(
-          `INSERT INTO timetable_slots (department, year, semester, day, time, subject, faculty) VALUES ?`,
-          [rowsToInsert],
-          (insertError, result) => {
-            if (insertError) {
-              console.error("INSERT ERROR:", insertError);
-              return res.status(500).json({ message: "Insert failed" });
-            }
-
-            res.json({ success: true, inserted: result.affectedRows });
-          }
-        );
-      });
-    });
+  const lockSql = `
+    SELECT faculty, day, time
+    FROM timetable_slots
+    WHERE faculty IS NOT NULL
+      AND faculty <> ''
+      AND NOT (department = ? AND year = ? AND semester = ?)
+  `;
+  const lockedRows = await query(lockSql, [department, year, semester]);
+  const lockedFacultyBookings = lockedRows.map((slot) => {
+    return `${slot.faculty}__${slot.day}__${slot.time}`;
   });
+
+  const timetable = generateTimetable(
+    subjects,
+    Number(year) === 4 ? generateFourthYearSlots() : generateEmptySlots(),
+    { lockedFacultyBookings }
+  );
+
+  if (!timetable) {
+    const error = new Error("Could not generate a timetable with the current constraints");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return timetable;
+}
+
+const previewTimetableController = async (req, res) => {
+  try {
+    const { year, semester } = req.body;
+    const department = normalizeDepartment(req.body.department);
+
+    if (!year || !semester) {
+      return res.status(400).json({ message: "year & semester required" });
+    }
+
+    const timetable = await buildTimetableForSelection(department, year, semester);
+    const savedSlots = timetable.filter((slot) => slot.subject && slot.subject !== "BREAK" && slot.subject !== "LUNCH");
+
+    res.json({
+      success: true,
+      inserted: savedSlots.length,
+      slots: timetable
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(err.statusCode || 500).json({ message: err.message || "Preview failed" });
+  }
 };
+
+const saveTimetableController = async (req, res) => {
+  try {
+    const { year, semester } = req.body;
+    const department = normalizeDepartment(req.body.department);
+
+    if (!year || !semester) {
+      return res.status(400).json({ message: "year & semester required" });
+    }
+
+    const timetable = await buildTimetableForSelection(department, year, semester);
+    const rowsToInsert = timetable
+      .filter((slot) => slot.subject && slot.subject !== "BREAK" && slot.subject !== "LUNCH")
+      .map((slot) => [department, year, semester, slot.day, slot.time, slot.subject, slot.faculty || null]);
+
+    await query("DELETE FROM timetable_slots WHERE department = ? AND year = ? AND semester = ?", [department, year, semester]);
+    const result = await query(
+      `INSERT INTO timetable_slots (department, year, semester, day, time, subject, faculty) VALUES ?`,
+      [rowsToInsert]
+    );
+
+    res.json({ success: true, inserted: result.affectedRows });
+  } catch (err) {
+    console.error(err);
+    res.status(err.statusCode || 500).json({ message: err.message || "Save failed" });
+  }
+};
+
+const generateTimetableController = saveTimetableController;
 
 const getTimetableController = (req, res) => {
   const { year, semester } = req.query;
@@ -247,9 +268,74 @@ const getTimetableController = (req, res) => {
   });
 };
 
+const getFacultyAvailabilityController = async (req, res) => {
+  try {
+    const department = normalizeDepartment(req.query.department);
+    const day = String(req.query.day || "").trim().toUpperCase();
+    const time = String(req.query.time || "").trim();
+    const year = req.query.year ? Number(req.query.year) : null;
+    const semester = req.query.semester ? Number(req.query.semester) : null;
+
+    if (!day || !time) {
+      return res.status(400).json({ message: "day & time required" });
+    }
+
+    const facultySqlParts = [
+      "SELECT DISTINCT faculty",
+      "FROM subjects",
+      "WHERE faculty IS NOT NULL",
+      "AND faculty <> ''"
+    ];
+    const facultyParams = [];
+
+    if (department !== "SCIENCE_HUMANITIES") {
+      facultySqlParts.push("AND department = ?");
+      facultyParams.push(department);
+    }
+
+    if (year) {
+      facultySqlParts.push("AND year = ?");
+      facultyParams.push(year);
+    }
+
+    if (semester) {
+      facultySqlParts.push("AND semester = ?");
+      facultyParams.push(semester);
+    }
+
+    const busySql = `
+      SELECT DISTINCT faculty
+      FROM timetable_slots
+      WHERE day = ?
+        AND time = ?
+        AND faculty IS NOT NULL
+        AND faculty <> ''
+    `;
+
+    const [facultyRows, busyRows] = await Promise.all([
+      query(facultySqlParts.join(" "), facultyParams),
+      query(busySql, [day, time])
+    ]);
+
+    const busyFaculty = new Set(busyRows.map((row) => row.faculty));
+    const availableFaculty = facultyRows
+      .map((row) => row.faculty)
+      .filter((faculty) => !busyFaculty.has(faculty))
+      .sort((left, right) => left.localeCompare(right));
+
+    res.json({ success: true, availableFaculty });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Faculty availability lookup failed" });
+  }
+};
+
 module.exports = {
   uploadSubjectsController,
   getSubjectsController,
+  previewTimetableController,
+  saveTimetableController,
   generateTimetableController,
-  getTimetableController
+  getTimetableController,
+  getFacultyAvailabilityController
 };
