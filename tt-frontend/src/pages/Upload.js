@@ -17,20 +17,21 @@ function Upload({ department, year, semester }) {
 
     try {
       const formData = new FormData();
+
       formData.append("file", file);
       formData.append("department", department);
+      formData.append("year", year);
+      formData.append("semester", semester);
 
-      const res = await api.post(
-        "/upload-subjects",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data"
-          }
+      const res = await api.post("/upload-subjects", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data"
         }
-      );
+      });
 
-      setMessage(`Uploaded ${res.data.uploaded} subjects for ${department}, Year ${year}, Semester ${semester}`);
+      setMessage(
+        `Uploaded ${res.data.uploaded} subjects for ${department}, Year ${year}, Semester ${semester}`
+      );
     } catch (err) {
       console.error("UPLOAD ERROR:", err);
       setMessage(err.response?.data?.message || "Upload failed");
