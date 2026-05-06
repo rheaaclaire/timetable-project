@@ -2,11 +2,12 @@ import React from "react";
 
 function Sidebar({ setPage }) {
   const items = [
-    { id: "home", label: "Home" },
-    { id: "upload", label: "Upload" },
-    { id: "generate", label: "Generate" },
-    { id: "view", label: "View Timetable" }
-  ];
+  { id: "home", label: "Home" },
+  { id: "upload", label: "Upload" },
+  { id: "generate", label: "Generate" },
+  { id: "view", label: "View Timetable" },
+  { id: "faculty", label: "Faculty Timetable" }
+];
 
   return (
     <div className="sidebar">

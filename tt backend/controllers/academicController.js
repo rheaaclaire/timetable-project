@@ -232,6 +232,35 @@ if (department === "MECH") {
       const rowsToInsert = timetable
         .filter((slot) => slot.subject && slot.subject !== "BREAK" && slot.subject !== "LUNCH")
         .map((slot) => [department, year, semester, slot.day, slot.time, slot.subject, slot.faculty || null]);
+        const clashMap = new Map();
+const clashes = [];
+
+for (const row of rowsToInsert) {
+  const [dept, yr, sem, day, time, subject, faculty] = row;
+
+  if (!faculty) continue;
+
+  const key = `${faculty}_${day}_${time}`;
+
+  if (clashMap.has(key)) {
+    clashes.push({
+      faculty,
+      day,
+      time,
+      firstSubject: clashMap.get(key),
+      secondSubject: subject
+    });
+  } else {
+    clashMap.set(key, subject);
+  }
+}
+
+if (clashes.length > 0) {
+  return res.status(400).json({
+    message: "Teacher clash detected",
+    clashes
+  });
+}
 
       db.query("DELETE FROM timetable_slots WHERE department = ? AND year = ? AND semester = ?", [department, year, semester], (deleteError) => {
         if (deleteError) {

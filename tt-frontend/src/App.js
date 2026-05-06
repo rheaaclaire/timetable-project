@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import FacultyTimetable from "./pages/FacultyTimetable";
 
 import Sidebar from "./components/Sidebar";
 import Home from "./pages/Home";
@@ -17,7 +18,10 @@ function App() {
 
   const renderPage = () => {
     if (page === "home") return <Home />;
-    if (page === "upload") return <Upload department={department} year={year} semester={semester} />;
+
+    if (page === "upload")
+      return <Upload department={department} year={year} semester={semester} />;
+
     if (page === "generate") {
       return (
         <Generate
@@ -31,6 +35,7 @@ function App() {
         />
       );
     }
+
     if (page === "view") {
       return (
         <ViewTimetable
@@ -42,11 +47,18 @@ function App() {
         />
       );
     }
+
+    if (page === "faculty") {
+      return <FacultyTimetable />;
+    }
+
+    return <Home />;
   };
 
   return (
     <div className="app-layout">
       <Sidebar setPage={setPage} />
+
       <div className="main-content">
         <div className="page-shell">
           <div className="topbar">
@@ -93,9 +105,7 @@ function App() {
             </div>
           </div>
 
-          <div className="content-card">
-            {renderPage()}
-          </div>
+          <div className="content-card">{renderPage()}</div>
         </div>
       </div>
     </div>

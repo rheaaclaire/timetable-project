@@ -25,17 +25,57 @@ export default function ViewTimetable({ department, year, semester, refreshToken
       });
   }, [department, refreshToken, semester, year]);
 
+  const downloadTimetable = async () => {
+    try {
+      const res = await API.get("/export-timetable", {
+        params: {
+          department,
+          year: Number(year),
+          semester: Number(semester)
+        },
+        responseType: "blob"
+      });
+
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.setAttribute(
+        "download",
+        `${department}_Y${year}_S${semester}_Timetable.xlsx`
+      );
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.URL.revokeObjectURL(url);
+      setMessage("Timetable downloaded successfully.");
+    } catch (err) {
+      setMessage(err.response?.data?.message || "Download failed");
+    }
+  };
+
   return (
     <div className="page-section">
       <div className="section-heading section-heading-row">
         <div>
           <p className="section-kicker">Weekly Grid</p>
           <h2>View Timetable</h2>
-          <p className="section-copy">Viewing {department}, Year {year}, Semester {semester}</p>
+          <p className="section-copy">
+            Viewing {department}, Year {year}, Semester {semester}
+          </p>
         </div>
-        <button className="secondary-button" onClick={() => onRefresh?.()}>
-          Refresh Timetable
-        </button>
+
+        <div style={{ display: "flex", gap: "10px" }}>
+          <button className="secondary-button" onClick={() => onRefresh?.()}>
+            Refresh Timetable
+          </button>
+
+          <button className="secondary-button" onClick={downloadTimetable}>
+            Download Excel
+          </button>
+        </div>
       </div>
 
       {message && <p className="status-message">{message}</p>}

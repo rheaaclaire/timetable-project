@@ -1,8 +1,8 @@
-const express = require('express');
-const { exportTimetableController } = require('../controllers/exportController');
-
+const express = require("express");
 const router = express.Router();
 
-router.get('/export-timetable', exportTimetableController);
+const { exportTimetable } = require("../controllers/exportController");
+
+router.get("/export-timetable", exportTimetable);
 
 module.exports = router;

@@ -121,8 +121,33 @@ function generateMechTimetable(subjects, lockedFacultyBookings = []) {
   });
 
   for (const subject of expandedSubjects) {
-    let placed = false;
+  let placed = false;
 
+  // 🔵 LAB / WORKSHOP logic (after lunch, continuous)
+  if (subject.type === "LAB" || subject.type === "WORKSHOP") {
+    const duration = subject.duration || 2;
+
+    const block = findContinuousLabBlock(
+  timetable,
+  subject,
+  facultyBookings,
+  duration
+);
+
+    if (!block) {
+      console.log("MECH ERROR: Could not place lab/workshop block", subject.name);
+      return null;
+    }
+
+    for (const slot of block) {
+      assignSlot(slot, subject.name, subject.faculty, facultyBookings);
+    }
+
+    placed = true;
+  }
+
+  // 🟢 THEORY / TUTORIAL logic (normal placement)
+  else {
     for (const slot of classSlots) {
       if (canPlace(slot, subject.faculty, timetable, facultyBookings)) {
         assignSlot(slot, subject.name, subject.faculty, facultyBookings);
@@ -130,14 +155,53 @@ function generateMechTimetable(subjects, lockedFacultyBookings = []) {
         break;
       }
     }
+  }
 
-    if (!placed) {
-      console.log("MECH ERROR: Could not place", subject.name);
-      return null;
+  if (!placed) {
+    console.log("MECH ERROR: Could not place", subject.name);
+    return null;
+  }
+}
+
+  return timetable;
+}
+function findContinuousLabBlock(timetable, subject, facultyBookings, duration) {
+  const allowedLabStartTimes = [
+    "11:15-12:15",
+    "14:00-15:00",
+    "15:00-16:00"
+  ];
+
+  for (const day of DAYS) {
+    for (const startTime of allowedLabStartTimes) {
+      const startIndex = timetable.findIndex(
+        (slot) =>
+          slot.day === day &&
+          slot.time === startTime &&
+          slot.type === "CLASS"
+      );
+
+      if (startIndex === -1) continue;
+
+      const block = timetable.slice(startIndex, startIndex + duration);
+
+      const validBlock =
+        block.length === duration &&
+        block.every((slot) => slot.day === day && slot.type === "CLASS");
+
+      if (!validBlock) continue;
+
+      const allFree = block.every((slot) =>
+        canPlace(slot, subject.faculty, timetable, facultyBookings)
+      );
+
+      if (allFree) {
+        return block;
+      }
     }
   }
 
-  return timetable;
+  return null;
 }
 
 module.exports = {
