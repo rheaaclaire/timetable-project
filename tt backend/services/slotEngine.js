@@ -21,16 +21,27 @@ const FOURTH_YEAR_PROJECT_PERIODS = [
   { time: "16:00-17:00", type: "CLASS", classIndex: 6 }
 ];
 const LAB_START_TIMES_BY_DURATION = {
-  2: new Set(["10:00-11:00", "11:15-12:15", "13:00-14:00", "14:00-15:00", "15:00-16:00"]),
+  2: new Set(["11:15-12:15", "13:00-14:00", "14:00-15:00", "15:00-16:00"]),
   3: new Set(["13:00-14:00", "14:00-15:00"])
 };
 
-function generateEmptySlots() {
+let searchDeadline = 0;
+
+function setSearchDeadline(timeoutMs) {
+  searchDeadline = timeoutMs ? Date.now() + timeoutMs : 0;
+}
+
+function isSearchTimedOut() {
+  return searchDeadline > 0 && Date.now() > searchDeadline;
+}
+
+function generateEmptySlots(options = {}) {
+  const includeSaturday = Boolean(options.includeSaturday);
   const slots = [];
 
   for (const day of DAYS) {
     for (const period of PERIODS) {
-      if (day === "SAT") continue;
+      if (day === "SAT" && !includeSaturday) continue;
 
       slots.push({
         day,
@@ -46,12 +57,13 @@ function generateEmptySlots() {
   return slots;
 }
 
-function generateSlotsFromPeriods(periods) {
+function generateSlotsFromPeriods(periods, options = {}) {
+  const includeSaturday = Boolean(options.includeSaturday);
   const slots = [];
 
   for (const day of DAYS) {
     for (const period of periods) {
-      if (day === "SAT") continue;
+      if (day === "SAT" && !includeSaturday) continue;
 
       slots.push({
         day,
@@ -67,8 +79,8 @@ function generateSlotsFromPeriods(periods) {
   return slots;
 }
 
-function generateFourthYearSlots() {
-  return generateSlotsFromPeriods(FOURTH_YEAR_PROJECT_PERIODS);
+function generateFourthYearSlots(options = {}) {
+  return generateSlotsFromPeriods(FOURTH_YEAR_PROJECT_PERIODS, options);
 }
 
 function normalizeType(type, name) {
@@ -76,6 +88,7 @@ function normalizeType(type, name) {
   const nameValue = String(name || "").trim().toUpperCase();
 
   if (typeValue.includes("PROJECT") || nameValue.includes("PROJECT")) return "PROJECT";
+  if (typeValue.includes("WORKSHOP") || nameValue.includes("WORKSHOP")) return "LAB";
   if (typeValue.includes("LAB") || typeValue.includes("PRACTICAL") || nameValue.includes("LAB")) return "LAB";
   if (typeValue.includes("TUTORIAL") || nameValue.includes("TUTORIAL")) return "TUTORIAL";
   if (typeValue.includes("MAJOR") || typeValue.includes("MINOR") || nameValue.includes("MAJOR") || nameValue.includes("MINOR")) return "MAJOR_MINOR";
@@ -88,6 +101,10 @@ function normalizeSubjects(subjects) {
     .map((subject, index) => {
       const type = normalizeType(subject.type, subject.name);
       const nameValue = String(subject.name || "").toLowerCase();
+      const usesClosingPlacement = nameValue.includes("major")
+        || nameValue.includes("minor")
+        || nameValue.includes("honor")
+        || nameValue.includes("honour");
 
       return {
         key: `${subject.name}::${subject.faculty || "NA"}::${index}`,
@@ -97,8 +114,8 @@ function normalizeSubjects(subjects) {
         type,
         isLab: type === "LAB",
         isProject: type === "PROJECT",
-        isMajorMinor: Boolean(subject.is_major_minor) || type === "MAJOR_MINOR" || nameValue.includes("major") || nameValue.includes("minor"),
-        closesDay: Boolean(subject.closes_day) || nameValue.includes("major") || nameValue.includes("minor")
+        isMajorMinor: Boolean(subject.is_major_minor) || type === "MAJOR_MINOR" || usesClosingPlacement,
+        closesDay: Boolean(subject.closes_day) || usesClosingPlacement
       };
     })
     .filter((subject) => subject.hoursPerWeek > 0);
@@ -117,6 +134,7 @@ function createState(options = {}) {
   const facultyBookings = new Set(options.lockedFacultyBookings || []);
 
   return {
+    options,
     assignments: new Map(),
     weeklyLabSubjects: new Set(),
     facultyBookings,
@@ -127,6 +145,7 @@ function createState(options = {}) {
         teachingCount: 0,
         usedClassIndices: new Set(),
         hasLab: false,
+        labCount: 0,
         labStartIndex: null,
         labEndIndex: null,
         allowClosingMajorMinorAfterLab: false,
@@ -137,6 +156,24 @@ function createState(options = {}) {
       return result;
     }, {})
   };
+}
+
+function getLabStartOptions(duration, state) {
+  if (state.options.labsInLaterHalfOnly) {
+    if (duration === 2) {
+      return state.options.singleBreakSchedule
+        ? new Set(["13:00-14:00", "14:00-15:00", "15:00-16:00"])
+        : new Set(["11:15-12:15", "14:00-15:00", "15:00-16:00"]);
+    }
+
+    if (duration === 3) {
+      return state.options.singleBreakSchedule
+        ? new Set(["13:00-14:00", "14:00-15:00"])
+        : new Set(["14:00-15:00"]);
+    }
+  }
+
+  return LAB_START_TIMES_BY_DURATION[duration];
 }
 
 function getSubjectCountForDay(state, subjectKey, day) {
@@ -160,17 +197,39 @@ function incrementSubjectCount(state, subjectKey, day, delta) {
   }
 }
 
+function getTrackingKey(task) {
+  return task.isLab && task.repeatGroupKey ? task.repeatGroupKey : task.subjectKey;
+}
+
 function countGaps(indices) {
   if (!indices.length) return 0;
   const sorted = [...indices].sort((left, right) => left - right);
   return (sorted[sorted.length - 1] - sorted[0] + 1) - sorted.length;
 }
 
+function splitFacultyNames(faculty) {
+  return String(faculty || "")
+    .split(/\s*(?:\/|,|&|\band\b)\s*/i)
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+function normalizeFacultyName(faculty) {
+  return String(faculty || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^(dr|mr|mrs|ms|prof)\.?\s+/i, "")
+    .replace(/\s+/g, " ");
+}
+
 function canUseFaculty(task, affectedSlots, state) {
   if (!task.faculty) return true;
+  const facultyNames = splitFacultyNames(task.faculty);
 
   return affectedSlots.every((slot) => {
-    return !state.facultyBookings.has(`${task.faculty}__${slot.day}__${slot.time}`);
+    return facultyNames.every((faculty) => {
+      return !state.facultyBookings.has(`${normalizeFacultyName(faculty)}__${slot.day}__${slot.time}`);
+    });
   });
 }
 
@@ -179,19 +238,20 @@ function canPlaceLab(task, startSlot, state, classSlotsByDay) {
   const dayState = state.dayState[startSlot.day];
   const startIndex = daySlots.findIndex((slot) => slot.time === startSlot.time);
   const duration = task.labSlots || 2;
-  const validStarts = LAB_START_TIMES_BY_DURATION[duration];
+  const validStarts = getLabStartOptions(duration, state);
 
   if (!validStarts || !validStarts.has(startSlot.time)) return null;
-  if (startSlot.day === "SAT") return null;
+  if (startSlot.day === "SAT" && !state.options.includeSaturday) return null;
   if (task.closesDay && !["14:00-15:00", "15:00-16:00"].includes(startSlot.time)) return null;
   if (
     dayState.closingSubjectKey &&
     dayState.closingSubjectKey !== task.subjectKey &&
     !(dayState.closingIsMajorMinor && task.isMajorMinor)
   ) return null;
-  if (state.weeklyLabSubjects.has(task.subjectKey)) return null;
-  if (getSubjectCountForDay(state, task.subjectKey, startSlot.day) > 0) return null;
-  if (dayState.hasLab) return null;
+  const trackingKey = getTrackingKey(task);
+  if (state.options.singleLabSessionPerWeek && task.enforceSingleWeekly && state.weeklyLabSubjects.has(trackingKey)) return null;
+  if (getSubjectCountForDay(state, trackingKey, startSlot.day) > 0) return null;
+  if (dayState.labCount >= (state.options.maxLabsPerDay || 1)) return null;
   const affectedSlots = daySlots.slice(startIndex, startIndex + duration);
 
   if (affectedSlots.length !== duration) return null;
@@ -205,12 +265,14 @@ function canPlaceLab(task, startSlot, state, classSlotsByDay) {
     return period && period.classIndex > affectedSlots[affectedSlots.length - 1].classIndex;
   });
 
-  if (startSlot.time === "10:00-11:00" && laterAssignments.length) return null;
-  if (startSlot.time === "11:15-12:15" && laterAssignments.length) return null;
-  if (startSlot.time === "15:00-16:00" && laterAssignments.length) return null;
-  if (duration === 3 && laterAssignments.length) return null;
+  if (!state.options.allowClassesAfterLab) {
+    if (startSlot.time === "10:00-11:00" && laterAssignments.length) return null;
+    if (startSlot.time === "11:15-12:15" && laterAssignments.length) return null;
+    if (startSlot.time === "15:00-16:00" && laterAssignments.length) return null;
+    if (duration === 3 && laterAssignments.length) return null;
+  }
 
-  if (startSlot.time === "13:00-14:00" || startSlot.time === "14:00-15:00") {
+  if (!state.options.allowClassesAfterLab && (startSlot.time === "13:00-14:00" || startSlot.time === "14:00-15:00")) {
     const laterNonClosingAssignment = laterAssignments.some(([, assignment]) => {
       return !String(assignment.subject || "").toLowerCase().includes("major")
         && !String(assignment.subject || "").toLowerCase().includes("minor");
@@ -234,10 +296,10 @@ function isClosingMajorMinorAllowedAfterLab(dayState, task, slot) {
 
 function canPlaceSingle(task, slot, state) {
   const dayState = state.dayState[slot.day];
-  if (slot.day === "SAT") return false;
+  if (slot.day === "SAT" && !state.options.includeSaturday) return false;
   if (state.assignments.has(`${slot.day}__${slot.time}`)) return false;
 
-  if (dayState.hasLab && dayState.labEndIndex !== null && slot.classIndex > dayState.labEndIndex) {
+  if (!state.options.allowClassesAfterLab && dayState.hasLab && dayState.labEndIndex !== null && slot.classIndex > dayState.labEndIndex) {
     const canFollowLab = isClosingMajorMinorAllowedAfterLab(dayState, task, slot);
 
     if (!canFollowLab) return false;
@@ -291,7 +353,7 @@ function canPlaceSingle(task, slot, state) {
 }
 
 function getDayCapacity(day) {
-  return day === "SAT" ? 0 : 7;
+  return day === "SAT" ? 7 : 7;
 }
 
 function isFourthYearClassSlots(classSlotsByDay) {
@@ -310,13 +372,13 @@ function placeTask(task, affectedSlots, state) {
     });
     dayState.usedClassIndices.add(slot.classIndex);
 
-    if (task.faculty) {
-      state.facultyBookings.add(`${task.faculty}__${slot.day}__${slot.time}`);
+    for (const faculty of splitFacultyNames(task.faculty)) {
+      state.facultyBookings.add(`${normalizeFacultyName(faculty)}__${slot.day}__${slot.time}`);
     }
   }
 
   dayState.teachingCount += affectedSlots.length;
-  incrementSubjectCount(state, task.subjectKey, day, affectedSlots.length);
+  incrementSubjectCount(state, getTrackingKey(task), day, affectedSlots.length);
 
   if (!task.isLab && affectedSlots.length === 1 && affectedSlots[0].classIndex === 0) {
     state.firstSlotCounts.set(
@@ -327,11 +389,18 @@ function placeTask(task, affectedSlots, state) {
 
   if (task.isLab) {
     dayState.hasLab = true;
-    dayState.labStartIndex = affectedSlots[0].classIndex;
-    dayState.labEndIndex = affectedSlots[affectedSlots.length - 1].classIndex;
+    dayState.labCount += 1;
+    dayState.labStartIndex = dayState.labStartIndex === null
+      ? affectedSlots[0].classIndex
+      : Math.min(dayState.labStartIndex, affectedSlots[0].classIndex);
+    dayState.labEndIndex = dayState.labEndIndex === null
+      ? affectedSlots[affectedSlots.length - 1].classIndex
+      : Math.max(dayState.labEndIndex, affectedSlots[affectedSlots.length - 1].classIndex);
     dayState.allowClosingMajorMinorAfterLab =
       !task.isMajorMinor && affectedSlots[0].classIndex === 4;
-    state.weeklyLabSubjects.add(task.subjectKey);
+    if (state.options.singleLabSessionPerWeek && task.enforceSingleWeekly) {
+      state.weeklyLabSubjects.add(getTrackingKey(task));
+    }
   }
 
   if (task.closesDay && affectedSlots[0].classIndex >= 4) {
@@ -352,13 +421,13 @@ function unplaceTask(task, affectedSlots, state) {
     state.assignments.delete(`${slot.day}__${slot.time}`);
     dayState.usedClassIndices.delete(slot.classIndex);
 
-    if (task.faculty) {
-      state.facultyBookings.delete(`${task.faculty}__${slot.day}__${slot.time}`);
+    for (const faculty of splitFacultyNames(task.faculty)) {
+      state.facultyBookings.delete(`${normalizeFacultyName(faculty)}__${slot.day}__${slot.time}`);
     }
   }
 
   dayState.teachingCount -= affectedSlots.length;
-  incrementSubjectCount(state, task.subjectKey, day, -affectedSlots.length);
+  incrementSubjectCount(state, getTrackingKey(task), day, -affectedSlots.length);
 
   if (!task.isLab && affectedSlots.length === 1 && affectedSlots[0].classIndex === 0) {
     const nextCount = (state.firstSlotCounts.get(task.subjectKey) || 0) - 1;
@@ -370,11 +439,30 @@ function unplaceTask(task, affectedSlots, state) {
   }
 
   if (task.isLab) {
-    dayState.hasLab = false;
-    dayState.labStartIndex = null;
-    dayState.labEndIndex = null;
+    dayState.labCount = Math.max(0, dayState.labCount - 1);
+    dayState.hasLab = dayState.labCount > 0;
+    if (!dayState.hasLab) {
+      dayState.labStartIndex = null;
+      dayState.labEndIndex = null;
+    } else {
+      const remainingLabIndices = [...state.assignments.entries()]
+        .filter(([key, assignment]) => {
+          const [assignedDay] = key.split("__");
+          return assignedDay === day && normalizeType(assignment.type, assignment.subject) === "LAB";
+        })
+        .map(([key]) => {
+          const [, time] = key.split("__");
+          return PERIODS.find((period) => period.time === time)?.classIndex;
+        })
+        .filter((classIndex) => classIndex !== undefined && classIndex !== null);
+
+      dayState.labStartIndex = Math.min(...remainingLabIndices);
+      dayState.labEndIndex = Math.max(...remainingLabIndices);
+    }
     dayState.allowClosingMajorMinorAfterLab = false;
-    state.weeklyLabSubjects.delete(task.subjectKey);
+    if (state.options.singleLabSessionPerWeek && task.enforceSingleWeekly) {
+      state.weeklyLabSubjects.delete(getTrackingKey(task));
+    }
   }
 
   if (task.closesDay) {
@@ -415,6 +503,8 @@ function getLabScore(task, day, affectedSlots, state) {
 }
 
 function placeLabs(tasks, state, classSlotsByDay, taskIndex = 0, afterLabs = null) {
+  if (isSearchTimedOut()) return false;
+
   if (taskIndex >= tasks.length) {
     return afterLabs ? afterLabs() : true;
   }
@@ -476,7 +566,12 @@ function getSingleScore(task, slot, state, classSlotsByDay) {
     score += (6 - slot.classIndex) * 7;
     score -= earlierEmptySlots * 16;
     score += slot.classIndex <= 2 ? 12 : -8;
-    score -= sameSubjectCount * 40;
+    score -= sameSubjectCount * 100;
+
+    if (dayState.hasLab && dayState.labStartIndex !== null && slot.classIndex < dayState.labStartIndex) {
+      score += 70;
+      score -= earlierEmptySlots * 24;
+    }
   }
 
   return score;
@@ -512,6 +607,8 @@ function fillSingles(tasks, state, classSlotsByDay) {
   const placed = [];
 
   for (const task of orderedTasks) {
+    if (isSearchTimedOut()) return false;
+
     const candidates = [];
 
     for (const day of DAYS) {
@@ -551,6 +648,8 @@ function fillProjects(tasks, state, classSlotsByDay) {
   const placed = [];
 
   for (const task of orderedTasks) {
+    if (isSearchTimedOut()) return false;
+
     const candidates = [];
 
     for (const day of DAYS) {
@@ -582,7 +681,7 @@ function fillProjects(tasks, state, classSlotsByDay) {
 }
 
 function canPlaceProjectModeTheory(task, slot, state) {
-  if (slot.day === "SAT") return false;
+  if (slot.day === "SAT" && !state.options.includeSaturday) return false;
   if (slot.classIndex > 2) return false;
   if (state.assignments.has(`${slot.day}__${slot.time}`)) return false;
   if (getSubjectCountForDay(state, task.subjectKey, slot.day) > 0) return false;
@@ -613,6 +712,8 @@ function fillProjectModeTheory(tasks, state, classSlotsByDay) {
   });
 
   for (const task of orderedTasks) {
+    if (isSearchTimedOut()) return false;
+
     const candidates = [];
 
     for (const day of DAYS) {
@@ -639,7 +740,7 @@ function fillProjectModeTheory(tasks, state, classSlotsByDay) {
 }
 
 function canPlaceProjectBlock(task, slot, state) {
-  if (slot.day === "SAT") return false;
+  if (slot.day === "SAT" && !state.options.includeSaturday) return false;
   if (state.assignments.has(`${slot.day}__${slot.time}`)) return false;
   return canUseFaculty(task, [slot], state);
 }
@@ -664,6 +765,8 @@ function fillProjectModeProjects(tasks, state, classSlotsByDay) {
   const placed = [];
 
   for (const task of tasks) {
+    if (isSearchTimedOut()) return false;
+
     const candidates = [];
 
     for (const day of DAYS) {
@@ -695,7 +798,9 @@ function fillProjectModeProjects(tasks, state, classSlotsByDay) {
 }
 
 function generateProjectModeTimetable(tasks, options) {
-  const projectSlots = generateSlotsFromPeriods(FOURTH_YEAR_PROJECT_PERIODS);
+  const projectSlots = generateSlotsFromPeriods(FOURTH_YEAR_PROJECT_PERIODS, {
+    includeSaturday: options.includeSaturday
+  });
   const classSlotsByDay = buildClassSlotsByDay(projectSlots);
   const state = createState(options);
 
@@ -725,6 +830,39 @@ function mergeAssignmentsIntoSlots(slots, state) {
   });
 }
 
+function splitLabHours(totalHours) {
+  const hours = Number(totalHours) || 0;
+  const segments = [];
+  let remaining = hours;
+
+  if (hours > 0 && hours % 2 === 0 && hours % 3 !== 0) {
+    return Array.from({ length: hours / 2 }, () => 2);
+  }
+
+  while (remaining > 0) {
+    if (remaining === 1) {
+      return null;
+    }
+
+    if (remaining === 2 || remaining === 3) {
+      segments.push(remaining);
+      remaining = 0;
+      continue;
+    }
+
+    if (remaining === 4) {
+      segments.push(2, 2);
+      remaining = 0;
+      continue;
+    }
+
+    segments.push(3);
+    remaining -= 3;
+  }
+
+  return segments;
+}
+
 function buildTasks(subjects) {
   const labs = [];
   const singles = [];
@@ -748,19 +886,24 @@ function buildTasks(subjects) {
     }
 
     if (subject.isLab) {
-      if (![2, 3].includes(subject.hoursPerWeek)) {
+      const segments = splitLabHours(subject.hoursPerWeek);
+      if (!segments) {
         return null;
       }
 
-      labs.push({
-        subjectKey: subject.key,
-        subjectName: subject.name,
-        faculty: subject.faculty,
-        type: subject.type,
-        isLab: true,
-        labSlots: subject.hoursPerWeek,
-        isMajorMinor: subject.isMajorMinor,
-        closesDay: subject.closesDay
+      segments.forEach((segment, segmentIndex) => {
+        labs.push({
+          subjectKey: `${subject.key}::LAB_SEGMENT_${segmentIndex}`,
+          repeatGroupKey: subject.key,
+          subjectName: subject.name,
+          faculty: subject.faculty,
+          type: subject.type,
+          isLab: true,
+          labSlots: segment,
+          isMajorMinor: subject.isMajorMinor,
+          closesDay: subject.closesDay,
+          enforceSingleWeekly: segments.length === 1
+        });
       });
       continue;
     }
@@ -783,6 +926,8 @@ function buildTasks(subjects) {
 }
 
 function generateTimetable(subjects, slots, options = {}) {
+  setSearchDeadline(options.timeoutMs || 12000);
+
   const normalizedSubjects = normalizeSubjects(subjects);
   const tasks = buildTasks(normalizedSubjects);
 
@@ -812,5 +957,7 @@ function generateTimetable(subjects, slots, options = {}) {
 module.exports = {
   generateEmptySlots,
   generateFourthYearSlots,
-  generateTimetable
+  generateTimetable,
+  normalizeFacultyName,
+  splitLabHours
 };

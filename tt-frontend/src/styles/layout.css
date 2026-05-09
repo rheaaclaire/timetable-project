@@ -40,6 +40,22 @@
   color: rgba(255, 255, 255, 0.78);
 }
 
+.user-chip {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.user-chip span {
+  color: rgba(255, 255, 255, 0.72);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.74rem;
+}
+
 .sidebar-nav {
   display: grid;
   gap: 12px;
@@ -62,6 +78,11 @@
   transform: translateX(3px);
   background: rgba(255, 255, 255, 0.15);
   border-color: rgba(255, 255, 255, 0.25);
+}
+
+.sidebar-button-muted {
+  margin-top: 12px;
+  color: #f2d5c1;
 }
 
 .main-content {
@@ -131,6 +152,7 @@
 }
 
 .selection-field select,
+.selection-field input,
 .file-input {
   min-width: 130px;
   border: 1px solid rgba(35, 65, 94, 0.12);
@@ -139,6 +161,42 @@
   background: #fffdf9;
   color: #16213e;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top left, rgba(242, 166, 90, 0.18), transparent 28%),
+    linear-gradient(135deg, #0f1c3f, #1f5575 52%, #f7f5ef 52%);
+}
+
+.login-card {
+  width: min(460px, 100%);
+  display: grid;
+  gap: 18px;
+  padding: 34px;
+  border-radius: 30px;
+  background: rgba(255, 253, 249, 0.94);
+  box-shadow: 0 28px 80px rgba(15, 28, 63, 0.24);
+}
+
+.login-card h1 {
+  margin: 0;
+  color: #16213e;
+  font-size: 2.4rem;
+  line-height: 1;
+}
+
+.credential-box {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: #f4efe4;
+  color: #3e4d5c;
 }
 
 .content-card {
@@ -222,6 +280,14 @@
   box-shadow: 0 10px 22px rgba(22, 33, 62, 0.12);
 }
 
+.primary-button:disabled,
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+  transform: none;
+  box-shadow: none;
+}
+
 .status-message {
   margin: 0;
   padding: 14px 16px;
@@ -229,6 +295,107 @@
   background: #f4efe4;
   color: #3e4d5c;
   border: 1px solid rgba(141, 91, 44, 0.15);
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.dashboard-card {
+  display: grid;
+  gap: 10px;
+  text-align: left;
+  border: 1px solid rgba(35, 65, 94, 0.1);
+  border-radius: 22px;
+  padding: 22px;
+  background: #fffaf1;
+  cursor: pointer;
+  color: #16213e;
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.dashboard-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 30px rgba(22, 33, 62, 0.1);
+}
+
+.dashboard-card span {
+  color: #8d5b2c;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.dashboard-card strong {
+  font-size: 1.15rem;
+}
+
+.dashboard-card p {
+  margin: 0;
+  color: #526174;
+  line-height: 1.5;
+}
+
+.summary-list {
+  display: grid;
+  gap: 10px;
+}
+
+.summary-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  border: 1px solid rgba(35, 65, 94, 0.08);
+  border-radius: 16px;
+  background: #fffdf9;
+  color: #3e4d5c;
+}
+
+.request-row {
+  grid-template-columns: 1.4fr 0.9fr 0.9fr 1.2fr auto;
+}
+
+.request-field-wide input {
+  min-width: 260px;
+}
+
+.notification-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.notification-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #edf3f7;
+  color: #17314e;
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.notification-granted {
+  background: #e9f6f2;
+  color: #246252;
+}
+
+.notification-denied,
+.notification-unsupported {
+  background: #f8e6df;
+  color: #8a3c26;
+}
+
+.compact-table {
+  min-width: 820px;
 }
 
 .timetable-wrap {
@@ -278,6 +445,21 @@
   background: #fffaf1;
 }
 
+.slot-clickable {
+  cursor: pointer;
+}
+
+.slot-clickable:hover {
+  outline: 2px solid rgba(47, 111, 143, 0.35);
+  outline-offset: -2px;
+}
+
+.slot-selected {
+  background: #e9f6f2;
+  outline: 3px solid rgba(47, 143, 116, 0.45);
+  outline-offset: -3px;
+}
+
 .slot-break,
 .slot-lunch {
   background: #edf3f7;
@@ -312,6 +494,11 @@
   .topbar,
   .section-heading-row {
     flex-direction: column;
+  }
+
+  .dashboard-grid,
+  .summary-row {
+    grid-template-columns: 1fr;
   }
 
   .main-content {

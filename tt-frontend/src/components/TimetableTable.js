@@ -23,18 +23,23 @@ const FOURTH_YEAR_TIMES = [
   "16:00-17:00"
 ];
 
-function TimetableTable({ slots, year }) {
+function TimetableTable({ slots, year, semester, swapMode = false, selectedSlots = [], onCellSelect }) {
   const data = Array.isArray(slots)
     ? slots
     : Array.isArray(slots?.timetable)
     ? slots.timetable
     : [];
-  const times = Number(year) === 4 ? FOURTH_YEAR_TIMES : REGULAR_TIMES;
+  const usesSingleLunchBreak = Number(semester) <= 2 || Number(year) === 4;
+  const times = usesSingleLunchBreak ? FOURTH_YEAR_TIMES : REGULAR_TIMES;
 
   const getCell = (day, time) => {
     return data.find(
       (s) => s.day === day && s.time === time
     );
+  };
+
+  const isSelected = (day, time) => {
+    return selectedSlots.some((slot) => slot.day === day && slot.time === time);
   };
 
   return (
@@ -57,7 +62,7 @@ function TimetableTable({ slots, year }) {
               {times.map((time) => {
                 const cell = getCell(day, time);
 
-                if (Number(year) === 4 && time === "12:00-13:00") {
+                if (usesSingleLunchBreak && time === "12:00-13:00") {
                   return (
                     <td key={time} className="slot slot-lunch">
                       <span>Lunch</span>
@@ -65,7 +70,7 @@ function TimetableTable({ slots, year }) {
                   );
                 }
 
-                if (!cell) {
+                if (!cell || !cell.subject) {
                   return <td key={time} className="slot slot-empty"></td>;
                 }
 
@@ -86,7 +91,11 @@ function TimetableTable({ slots, year }) {
                 }
 
                 return (
-                  <td key={time} className="slot slot-class">
+                  <td
+                    key={time}
+                    className={`slot slot-class ${isSelected(day, time) ? "slot-selected" : ""} ${swapMode ? "slot-clickable" : ""}`}
+                    onClick={() => swapMode && onCellSelect?.({ day, time, subject: cell.subject, faculty: cell.faculty })}
+                  >
                     <div className="slot-subject">{cell.subject}</div>
                     <div className="slot-faculty">{cell.faculty || "Faculty TBA"}</div>
                   </td>
