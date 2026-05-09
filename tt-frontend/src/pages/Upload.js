@@ -19,6 +19,8 @@ function Upload({ department, year, semester }) {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("department", department);
+      formData.append("year", year);
+      formData.append("semester", semester);
 
       const res = await api.post(
         "/upload-subjects",

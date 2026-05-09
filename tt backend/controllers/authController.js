@@ -13,7 +13,68 @@ function query(sql, params = []) {
   });
 }
 
-async function ensureUserColumns() {
+function isPlaceholderFaculty(name) {
+  const value = String(name || "").trim().toLowerCase();
+  return !value
+    || value === "none"
+    || value === "-"
+    || value === "tba"
+    || value === "faculty tba"
+    || value === "elective faculty"
+    || value === "open elective faculty"
+    || value === "honor faculty"
+    || value === "honors faculty"
+    || value === "major/minor faculty";
+}
+
+function splitFacultyNames(faculty) {
+  if (isPlaceholderFaculty(faculty)) {
+    return [];
+  }
+
+  return String(faculty || "")
+    .split(/\s*(?:\/|,|&|\band\b)\s*/i)
+    .map((name) => name.trim())
+    .filter((name) => !isPlaceholderFaculty(name));
+}
+
+function normalizeDepartment(value) {
+  const rawValue = String(value || "ECS").trim().toUpperCase();
+  const compactValue = rawValue.replace(/[\s&/-]+/g, "_");
+
+  if (compactValue === "SCIENCE_HUMANITIES" || compactValue === "SCIENCE_AND_HUMANITIES") {
+    return "SCIENCE_HUMANITIES";
+  }
+
+  return compactValue || "ECS";
+}
+
+function slugifyEmailName(name) {
+  return String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^(prof|dr|mrs|mr|ms)\.?\s+/i, "")
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "");
+}
+
+function facultyEmail(name) {
+  return `${slugifyEmailName(name) || "teacher"}@dbce.com`;
+}
+
+async function ensureUsersTable() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS users (
+      user_id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(100),
+      email VARCHAR(100) UNIQUE,
+      password VARCHAR(255),
+      role VARCHAR(20),
+      department VARCHAR(40) NULL,
+      faculty_name VARCHAR(100) NULL
+    )
+  `);
+
   const statements = [
     "ALTER TABLE users ADD COLUMN department VARCHAR(40) NULL",
     "ALTER TABLE users ADD COLUMN faculty_name VARCHAR(100) NULL"
@@ -30,34 +91,108 @@ async function ensureUserColumns() {
   }
 }
 
-async function ensureSeedUsers() {
-  await ensureUserColumns();
+async function getFacultySeedUsers() {
+  const rows = await query(`
+    SELECT faculty, department
+    FROM subjects
+    WHERE faculty IS NOT NULL AND faculty <> ''
+    UNION
+    SELECT faculty, department
+    FROM timetable_slots
+    WHERE faculty IS NOT NULL AND faculty <> ''
+  `);
 
-  const [{ count }] = await query("SELECT COUNT(*) AS count FROM users");
-  if (Number(count) > 0) {
+  const facultyMap = new Map();
+
+  rows.forEach((row) => {
+    splitFacultyNames(row.faculty).forEach((name) => {
+      const key = name.toLowerCase();
+      if (!facultyMap.has(key)) {
+        facultyMap.set(key, {
+          name,
+          email: facultyEmail(name),
+          password: "teacher123",
+          role: "teacher",
+          department: normalizeDepartment(row.department),
+          faculty_name: name
+        });
+      }
+    });
+  });
+
+  if (!facultyMap.size) {
+    facultyMap.set("demo teacher", {
+      name: "Teacher",
+      email: "teacher@dbce.com",
+      password: "teacher123",
+      role: "teacher",
+      department: "ECS",
+      faculty_name: "Prof. Yeshudas Muttu"
+    });
+  }
+
+  return [...facultyMap.values()];
+}
+
+async function upsertUser(user) {
+  const existingUsers = await query(
+    `SELECT user_id FROM users WHERE email = ?`,
+    [user.email]
+  );
+
+  if (existingUsers.length) {
+    await query(
+      `UPDATE users
+       SET name = ?, role = ?, department = ?, faculty_name = ?
+       WHERE email = ?`,
+      [
+        user.name,
+        user.role,
+        user.department || null,
+        user.faculty_name || null,
+        user.email
+      ]
+    );
     return;
   }
 
-  const users = [
+  const hashedPassword = await bcrypt.hash(user.password, 10);
+
+  await query(
+    `INSERT INTO users (name, email, password, role, department, faculty_name)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       name = VALUES(name),
+       password = VALUES(password),
+       role = VALUES(role),
+       department = VALUES(department),
+       faculty_name = VALUES(faculty_name)`,
+    [
+      user.name,
+      user.email,
+      hashedPassword,
+      user.role,
+      user.department || null,
+      user.faculty_name || null
+    ]
+  );
+}
+
+async function ensureSeedUsers() {
+  await ensureUsersTable();
+
+  const fixedUsers = [
     {
       name: "Admin",
-      email: "admin@tt.local",
+      email: "admin@dbce.com",
       password: "admin123",
       role: "admin",
       department: "ECS",
       faculty_name: null
     },
     {
-      name: "Teacher",
-      email: "teacher@tt.local",
-      password: "teacher123",
-      role: "teacher",
-      department: "ECS",
-      faculty_name: "Prof. Yeshudas Muttu"
-    },
-    {
       name: "Student",
-      email: "student@tt.local",
+      email: "student@dbce.com",
       password: "student123",
       role: "student",
       department: "ECS",
@@ -65,13 +200,10 @@ async function ensureSeedUsers() {
     }
   ];
 
+  const users = [...fixedUsers, ...(await getFacultySeedUsers())];
+
   for (const user of users) {
-    const hashedPassword = await bcrypt.hash(user.password, 10);
-    await query(
-      `INSERT INTO users (name, email, password, role, department, faculty_name)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [user.name, user.email, hashedPassword, user.role, user.department, user.faculty_name]
-    );
+    await upsertUser(user);
   }
 }
 
@@ -131,8 +263,36 @@ const seedUsersController = async (_req, res) => {
   }
 };
 
+const getCredentialsController = async (_req, res) => {
+  try {
+    await ensureSeedUsers();
+
+    const users = await query(
+      `SELECT name, email, role, department, faculty_name AS facultyName
+       FROM users
+       ORDER BY FIELD(role, 'admin', 'teacher', 'student'), name`
+    );
+
+    res.json({
+      success: true,
+      credentials: users.map((user) => ({
+        ...user,
+        password: user.role === "admin"
+          ? "admin123"
+          : user.role === "student"
+          ? "student123"
+          : "teacher123"
+      }))
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Could not load credentials" });
+  }
+};
+
 module.exports = {
   loginController,
   seedUsersController,
+  getCredentialsController,
   ensureSeedUsers
 };

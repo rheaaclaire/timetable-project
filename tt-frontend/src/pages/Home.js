@@ -1,101 +1,95 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import API from "../services/api";
 import "../styles/home.css";
 
-const DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT"];
-const REGULAR_TIMES = [
-  "09:00-10:00",
-  "10:00-11:00",
-  "11:15-12:15",
-  "12:15-13:15",
-  "14:00-15:00",
-  "15:00-16:00",
-  "16:00-17:00"
-];
-const FOURTH_YEAR_TIMES = [
-  "09:00-10:00",
-  "10:00-11:00",
-  "11:00-12:00",
-  "13:00-14:00",
-  "14:00-15:00",
-  "15:00-16:00",
-  "16:00-17:00"
-];
-
-function Home({ department, year, semester }) {
-  const [day, setDay] = useState("MON");
-  const [time, setTime] = useState("09:00-10:00");
-  const [facultyList, setFacultyList] = useState([]);
+function Home({ user, setPage }) {
+  const [saved, setSaved] = useState([]);
+  const [credentials, setCredentials] = useState([]);
   const [message, setMessage] = useState("");
-  const times = Number(year) === 4 ? FOURTH_YEAR_TIMES : REGULAR_TIMES;
 
-  const checkAvailability = async () => {
-    try {
-      const res = await API.get("/faculty-availability", {
-        params: { department, year: Number(year), semester: Number(semester), day, time }
-      });
-      const nextList = res.data.availableFaculty || [];
-      setFacultyList(nextList);
-      setMessage(nextList.length ? "" : "No free faculty found for this slot.");
-    } catch (err) {
-      setFacultyList([]);
-      setMessage(err.response?.data?.message || "Could not check faculty availability.");
+  useEffect(() => {
+    API.get("/saved-timetables")
+      .then((res) => setSaved(res.data.timetables || []))
+      .catch(() => setMessage("Could not load saved timetable summary."));
+
+    if (user?.role === "admin") {
+      API.get("/auth/credentials")
+        .then((res) => setCredentials(res.data.credentials || []))
+        .catch(() => {});
     }
-  };
+  }, [user]);
 
   return (
     <div className="home-container">
-      <h1 className="welcome-text">
-        Welcome, Admin
-      </h1>
+      <h1 className="welcome-text">Welcome, {user?.name}</h1>
 
       <div className="highlight-box">
         <h2>Academic Timetable Generation</h2>
         <p>& Management</p>
       </div>
 
-      <div className="page-section">
-        <div className="section-heading">
-          <p className="section-kicker">Faculty Lookup</p>
-          <h2>Check Faculty Availability</h2>
-          <p className="section-copy">
-            Find faculty who are free for {department}, Year {year}, Semester {semester} at a selected day and time.
-          </p>
-        </div>
+      {message && <p className="status-message">{message}</p>}
 
-        <div className="action-panel">
-          <label className="selection-field">
-            <span>Day</span>
-            <select value={day} onChange={(e) => setDay(e.target.value)}>
-              {DAYS.map((value) => (
-                <option key={value} value={value}>{value}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="selection-field">
-            <span>Time</span>
-            <select value={time} onChange={(e) => setTime(e.target.value)}>
-              {times.map((value) => (
-                <option key={value} value={value}>{value}</option>
-              ))}
-            </select>
-          </label>
-
-          <button className="primary-button" onClick={checkAvailability}>
-            Check Availability
-          </button>
-        </div>
-
-        {message && <p className="status-message">{message}</p>}
-
-        {!!facultyList.length && (
-          <div className="status-message">
-            <strong>Available Faculty:</strong> {facultyList.join(", ")}
-          </div>
-        )}
+      <div className="dashboard-grid">
+        <button className="dashboard-card" onClick={() => setPage("upload")}>
+          <span>01</span>
+          <strong>Upload Loadsheet</strong>
+          <p>Add Excel subject loads department-wise.</p>
+        </button>
+        <button className="dashboard-card" onClick={() => setPage("generate")}>
+          <span>02</span>
+          <strong>Generate & Save</strong>
+          <p>Preview the timetable, then save only when approved.</p>
+        </button>
+        <button className="dashboard-card" onClick={() => setPage("view")}>
+          <span>03</span>
+          <strong>View & Export</strong>
+          <p>Review saved grids and export them to Excel.</p>
+        </button>
       </div>
 
+      <div className="page-section">
+        <div className="section-heading">
+          <p className="section-kicker">Saved Timetables</p>
+          <h2>Saved Schedule Summary</h2>
+        </div>
+
+        <div className="summary-list">
+          {saved.length ? saved.map((item) => (
+            <div className="summary-row" key={`${item.department}-${item.year}-${item.semester}`}>
+              <strong>{item.department}</strong>
+              <span>Year {item.year}, Semester {item.semester}</span>
+              <span>{item.slotCount} saved slots</span>
+            </div>
+          )) : <p className="status-message">No saved timetables yet.</p>}
+        </div>
+      </div>
+
+      {user?.role === "admin" && (
+        <div className="page-section">
+          <div className="section-heading">
+            <p className="section-kicker">Login IDs</p>
+            <h2>Demo User Accounts</h2>
+            <p className="section-copy">
+              Teacher accounts are created automatically from faculty names already present in the database.
+            </p>
+          </div>
+
+          <div className="summary-list">
+            {credentials.slice(0, 12).map((account) => (
+              <div className="summary-row" key={account.email}>
+                <strong>{account.name}</strong>
+                <span>{account.role}</span>
+                <span>{account.email}</span>
+                <span>{account.password}</span>
+              </div>
+            ))}
+            {credentials.length > 12 && (
+              <p className="section-copy">Showing first 12 accounts. All teacher passwords are teacher123.</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
