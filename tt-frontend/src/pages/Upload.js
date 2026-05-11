@@ -7,6 +7,7 @@ function Upload({ department, year, semester }) {
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
+    setMessage("");
   };
 
   const uploadFile = async () => {
@@ -17,22 +18,17 @@ function Upload({ department, year, semester }) {
 
     try {
       const formData = new FormData();
+
       formData.append("file", file);
       formData.append("department", department);
       formData.append("year", year);
       formData.append("semester", semester);
 
-      const res = await api.post(
-        "/upload-subjects",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data"
-          }
-        }
-      );
+      const res = await api.post("/upload-subjects", formData);
 
-      setMessage(`Uploaded ${res.data.uploaded} subjects for ${department}, Year ${year}, Semester ${semester}`);
+      setMessage(
+        `Uploaded ${res.data.uploaded} subjects for ${department}, Year ${year}, Semester ${semester}`
+      );
     } catch (err) {
       console.error("UPLOAD ERROR:", err);
       setMessage(err.response?.data?.message || "Upload failed");
@@ -45,7 +41,8 @@ function Upload({ department, year, semester }) {
         <p className="section-kicker">Data Import</p>
         <h2>Upload Subjects</h2>
         <p className="section-copy">
-          Selected target: {department}, Year {year}, Semester {semester}. Upload the sheet that matches this department and semester.
+          Selected target: {department}, Year {year}, Semester {semester}.
+          Upload the sheet that matches this department and semester.
         </p>
       </div>
 
@@ -61,6 +58,10 @@ function Upload({ department, year, semester }) {
           Upload Excel
         </button>
       </div>
+
+      <p className="section-copy">
+        Accepted columns: subject/course name, hours or L/T/P, type, and faculty.
+      </p>
 
       {message && <p className="status-message">{message}</p>}
     </div>
