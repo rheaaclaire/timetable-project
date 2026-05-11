@@ -1,12 +1,17 @@
 import React from "react";
 
-function Sidebar({ setPage }) {
-  const items = [
-    { id: "home", label: "Home" },
-    { id: "upload", label: "Upload" },
-    { id: "generate", label: "Generate" },
-    { id: "view", label: "View Timetable" }
-  ];
+function Sidebar({ setPage, user, onLogout }) {
+  const role = user?.role || "student";
+  const items = role === "admin"
+    ? [
+        { id: "home", label: "Dashboard" },
+        { id: "upload", label: "Upload" },
+        { id: "generate", label: "Generate" },
+        { id: "view", label: "View Timetable" }
+      ]
+    : role === "teacher"
+    ? [{ id: "teacher", label: "My Timetable" }]
+    : [{ id: "view", label: "View Timetable" }];
 
   return (
     <div className="sidebar">
@@ -14,8 +19,13 @@ function Sidebar({ setPage }) {
         <p className="sidebar-kicker">DBCE ECS</p>
         <h2>Timetable Hub</h2>
         <p className="sidebar-copy">
-          Manage uploads, generate semester schedules, and review the weekly grid in one place.
+          Manage saved schedules with role-based access for admins, teachers, and students.
         </p>
+      </div>
+
+      <div className="user-chip">
+        <strong>{user?.name}</strong>
+        <span>{role}</span>
       </div>
 
       <div className="sidebar-nav">
@@ -28,6 +38,10 @@ function Sidebar({ setPage }) {
             {item.label}
           </button>
         ))}
+
+        <button className="sidebar-button sidebar-button-muted" onClick={onLogout}>
+          Logout
+        </button>
       </div>
     </div>
   );
