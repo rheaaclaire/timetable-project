@@ -59,6 +59,10 @@ function Upload({ department, year, semester }) {
         </button>
       </div>
 
+      <p className="section-copy">
+        Accepted columns: subject/course name, hours or L/T/P, type, and faculty.
+      </p>
+
       {message && <p className="status-message">{message}</p>}
     </div>
   );

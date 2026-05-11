@@ -10,6 +10,18 @@ function normalizeDepartment(value) {
   return String(value || "ECS").trim().toUpperCase();
 }
 
+function isDbAccessError(err) {
+  return err && err.code === "ER_ACCESS_DENIED_ERROR";
+}
+
+function dbErrorMessage(err, fallback) {
+  if (isDbAccessError(err)) {
+    return "Database login failed. Check tt backend/.env DB_USER and DB_PASSWORD.";
+  }
+
+  return fallback;
+}
+
 function inferYearFromSemester(semester) {
   const numericSemester = Number(semester);
   if (!numericSemester) return null;
@@ -95,6 +107,10 @@ const uploadSubjectsController = (req, res) => {
       return res.status(400).json({ message: "Excel file empty" });
     }
 
+    if (!req.body.department) {
+      return res.status(400).json({ message: "Department is required" });
+    }
+
     const uploadDepartment = normalizeDepartment(req.body.department);
     const uploadSemester = Number(req.body.semester);
     const uploadYear =
@@ -132,7 +148,10 @@ const uploadSubjectsController = (req, res) => {
         if (slotDeleteError) {
           console.error("TIMETABLE DELETE ERROR:", slotDeleteError);
           return res.status(500).json({
-            message: "Failed to clear old timetable"
+            message: dbErrorMessage(
+              slotDeleteError,
+              "Failed to clear old timetable"
+            )
           });
         }
 
@@ -143,7 +162,10 @@ const uploadSubjectsController = (req, res) => {
             if (subjectDeleteError) {
               console.error("SUBJECT DELETE ERROR:", subjectDeleteError);
               return res.status(500).json({
-                message: "Failed to replace old subjects"
+                message: dbErrorMessage(
+                  subjectDeleteError,
+                  "Failed to replace old subjects"
+                )
               });
             }
 
@@ -151,7 +173,7 @@ const uploadSubjectsController = (req, res) => {
               if (insertError) {
                 console.error("INSERT SUBJECT ERROR:", insertError);
                 return res.status(500).json({
-                  message: "Insert failed"
+                  message: dbErrorMessage(insertError, "Insert failed")
                 });
               }
 
@@ -187,7 +209,9 @@ const getSubjectsController = (req, res) => {
   db.query(sql, [department, year, semester], (err, rows) => {
     if (err) {
       console.error("FETCH SUBJECTS ERROR:", err);
-      return res.status(500).json({ message: "Fetch failed" });
+      return res.status(500).json({
+        message: dbErrorMessage(err, "Fetch failed")
+      });
     }
 
     res.json({ success: true, subjects: rows });
@@ -211,7 +235,9 @@ const generateTimetableController = (req, res) => {
   db.query(subjectSql, [department, year, semester], (err, subjects) => {
     if (err) {
       console.error("SUBJECT FETCH ERROR:", err);
-      return res.status(500).json({ message: "Subject fetch failed" });
+      return res.status(500).json({
+        message: dbErrorMessage(err, "Subject fetch failed")
+      });
     }
 
     if (!subjects.length) {
@@ -232,7 +258,7 @@ const generateTimetableController = (req, res) => {
       if (lockError) {
         console.error("FACULTY LOCK FETCH ERROR:", lockError);
         return res.status(500).json({
-          message: "Faculty lock fetch failed"
+          message: dbErrorMessage(lockError, "Faculty lock fetch failed")
         });
       }
 
@@ -254,10 +280,7 @@ const generateTimetableController = (req, res) => {
 
       let timetable;
 
-      if (department === "MECH") {
-        const { generateMechTimetable } = require("../services/mechSlotEngine");
-        timetable = generateMechTimetable(subjects, lockedFacultyBookings);
-      } else if (
+      if (
         department === "COMP" ||
         department === "COMP 1" ||
         department === "COMP 2"
@@ -312,7 +335,10 @@ const generateTimetableController = (req, res) => {
           if (deleteError) {
             console.error("DELETE TIMETABLE ERROR:", deleteError);
             return res.status(500).json({
-              message: "Failed to replace old timetable"
+              message: dbErrorMessage(
+                deleteError,
+                "Failed to replace old timetable"
+              )
             });
           }
 
@@ -326,7 +352,9 @@ const generateTimetableController = (req, res) => {
             (insertError, result) => {
               if (insertError) {
                 console.error("INSERT TIMETABLE ERROR:", insertError);
-                return res.status(500).json({ message: "Insert failed" });
+                return res.status(500).json({
+                  message: dbErrorMessage(insertError, "Insert failed")
+                });
               }
 
               res.json({
@@ -359,7 +387,9 @@ const getTimetableController = (req, res) => {
   db.query(sql, [department, year, semester], (err, rows) => {
     if (err) {
       console.error("FETCH TIMETABLE ERROR:", err);
-      return res.status(500).json({ message: "Fetch failed" });
+      return res.status(500).json({
+        message: dbErrorMessage(err, "Fetch failed")
+      });
     }
 
     res.json({ success: true, slots: rows });

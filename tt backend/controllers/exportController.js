@@ -3,6 +3,7 @@ const XLSX = require('xlsx');
 
 exports.exportTimetableController = (req, res) => {
   const { year, semester } = req.query;
+  const department = String(req.query.department || "ECS").trim().toUpperCase();
 
   if (!year || !semester) {
     return res.status(400).json({
@@ -13,11 +14,11 @@ exports.exportTimetableController = (req, res) => {
   const sql = `
     SELECT day, time, subject, room, faculty
     FROM timetable_slots
-    WHERE year=? AND semester=?
+    WHERE department=? AND year=? AND semester=?
     ORDER BY FIELD(day,'MON','TUE','WED','THU','FRI','SAT'), time
   `;
 
-  db.query(sql, [year, semester], (err, rows) => {
+  db.query(sql, [department, year, semester], (err, rows) => {
     if (err) {
       console.error(err);
       return res.status(500).json({ message: 'DB error' });
@@ -40,7 +41,7 @@ exports.exportTimetableController = (req, res) => {
 
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="Timetable_Y${year}_S${semester}.xlsx"`
+      `attachment; filename="Timetable_${department}_Y${year}_S${semester}.xlsx"`
     );
     res.setHeader(
       'Content-Type',
