@@ -1,4 +1,5 @@
-﻿const db = require("../config/db");
+﻿const { generateCompTimetable } = require("../services/compSlotEngine");
+const db = require("../config/db");
 const XLSX = require("xlsx");
 const { generateEmptySlots, generateFourthYearSlots, generateTimetable, normalizeFacultyName, splitLabHours } = require("../services/slotEngine");
 
@@ -207,11 +208,38 @@ async function getLockedFacultyBookings(department, year, semester) {
   `;
   const lockedRows = await query(lockSql, [...scope.params, department, year, semester]);
 
-  return lockedRows.flatMap((slot) => {
-    return splitFacultyNames(slot.faculty).map((faculty) => {
-      return `${normalizeFacultyName(faculty)}__${slot.day}__${slot.time}`;
+  async function getLockedFacultyBookings(department, year, semester) {
+  const scope = buildClashScopeWhere(department, semester);
+
+  const lockSql = `
+    SELECT faculty, day, time
+    FROM timetable_slots
+    WHERE faculty IS NOT NULL
+      AND faculty <> ''
+      AND ${scope.where}
+      AND NOT (department = ? AND year = ? AND semester = ?)
+  `;
+
+  const lockedRows = await query(lockSql, [
+    ...scope.params,
+    department,
+    year,
+    semester
+  ]);
+
+  const lockedFacultyBookings = new Set();
+
+  lockedRows.forEach((slot) => {
+    const facultyList = splitFacultyNames(slot.faculty);
+
+    facultyList.forEach((faculty) => {
+      const key = `${normalizeFacultyName(faculty)}__${slot.day}__${slot.time}`;
+      lockedFacultyBookings.add(key);
     });
   });
+
+  return lockedFacultyBookings;
+}
 }
 
 async function findSwapFacultyConflicts(department, year, semester, placements) {
@@ -431,7 +459,9 @@ async function buildTimetableForSelection(department, year, semester) {
     throw error;
   }
 
-  const lockedFacultyBookings = await getLockedFacultyBookings(department, year, semester);
+ const lockedFacultyBookings = new Set(
+  await getLockedFacultyBookings(department, year, semester)
+);
   const totalWeeklyHours = subjects.reduce((sum, subject) => {
     return sum + (Number(subject.hoursPerWeek) || 0);
   }, 0);
@@ -455,7 +485,20 @@ async function buildTimetableForSelection(department, year, semester) {
     throw error;
   }
 
-  const timetable = generateTimetable(
+  let timetable;
+
+if (
+  department === "COMP" ||
+  department === "COMP_1" ||
+  department === "COMP_2"
+) {
+  timetable = generateCompTimetable(
+    subjects,
+    Number(year),
+    lockedFacultyBookings
+  );
+} else {
+  timetable = generateTimetable(
     subjects,
     slotGrid,
     {
@@ -471,6 +514,7 @@ async function buildTimetableForSelection(department, year, semester) {
       maxLabsPerDay
     }
   );
+}
 
   if (!timetable) {
     const error = new Error("Could not generate a timetable with the current constraints");
