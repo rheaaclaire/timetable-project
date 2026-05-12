@@ -45,12 +45,16 @@ function App() {
   }, [department]);
 
   const login = (nextUser) => {
-    localStorage.setItem("tt-user", JSON.stringify(nextUser));
+  localStorage.setItem("tt-user", JSON.stringify(nextUser));
 
-    setUser(nextUser);
+  setUser(nextUser);
 
-    setDepartment(nextUser.department || "ECS");
-  };
+  setDepartment(nextUser.department || "ECS");
+
+  if (nextUser.role === "student") {
+    setPage("view");
+  }
+};
 
   const logout = () => {
     localStorage.removeItem("tt-user");

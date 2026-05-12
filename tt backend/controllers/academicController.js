@@ -319,70 +319,86 @@ function normalizeUploadRows(rows, defaults = {}) {
   });
 }
 
-const uploadSubjectsController = (req, res) => {
+const uploadSubjectsController = async (req, res) => {
   try {
+    console.log("UPLOAD CONTROLLER HIT");
+    console.log("REQ FILE:", req.file);
+    console.log("REQ BODY:", req.body);
+
     if (!req.file) {
-      return res.status(400).json({ message: "No file uploaded" });
+      return res.status(400).json({
+        message: "No file uploaded",
+      });
     }
 
-    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const workbook = XLSX.read(req.file.buffer, {
+      type: "buffer",
+    });
+
+    const sheet =
+      workbook.Sheets[workbook.SheetNames[0]];
+
     const rows = XLSX.utils.sheet_to_json(sheet);
-    const uploadDepartment = normalizeDepartment(req.body.department);
+
+    const uploadDepartment = normalizeDepartment(
+      req.body.department
+    );
 
     if (!rows.length) {
-      return res.status(400).json({ message: "Excel file empty" });
+      return res.status(400).json({
+        message: "Excel file empty",
+      });
     }
 
     const values = normalizeUploadRows(rows, {
       department: uploadDepartment,
       year: Number(req.body.year) || null,
-      semester: Number(req.body.semester) || null
+      semester: Number(req.body.semester) || null,
     });
-    const valuesWithDepartment = values.map((row) => [uploadDepartment, ...row.slice(1)]);
+
+    const valuesWithDepartment = values.map(
+      (row) => [
+        uploadDepartment,
+        ...row.slice(1),
+      ]
+    );
 
     if (!valuesWithDepartment.length) {
-      if (hasRowsMissingHours(rows)) {
-        return res.status(400).json({
-          message: "Some rows are missing weekly hours. Please fill the hours column before uploading."
-        });
-      }
-
       return res.status(400).json({
-        message: "Excel columns did not match the expected format"
+        message:
+          "Excel columns did not match expected format",
       });
     }
 
     const department = valuesWithDepartment[0][0];
     const year = valuesWithDepartment[0][1];
     const semester = valuesWithDepartment[0][2];
+
+    await db.query(
+      "DELETE FROM subjects WHERE department = ? AND year = ? AND semester = ?",
+      [department, year, semester]
+    );
+
     const sql = `
       INSERT INTO subjects
       (department, year, semester, name, hours_per_week, type, faculty)
       VALUES ?
     `;
 
-    db.query("DELETE FROM subjects WHERE department = ? AND year = ? AND semester = ?", [department, year, semester], (deleteError) => {
-      if (deleteError) {
-        console.error("DELETE ERROR:", deleteError);
-        return res.status(500).json({ message: "Failed to replace old subjects" });
-      }
+    const [result] = await db.query(sql, [
+      valuesWithDepartment,
+    ]);
 
-      db.query(sql, [valuesWithDepartment], (insertError, result) => {
-        if (insertError) {
-          console.error("INSERT ERROR:", insertError);
-          return res.status(500).json({ message: "Insert failed" });
-        }
-
-        res.json({
-          success: true,
-          uploaded: result.affectedRows
-        });
-      });
+    res.json({
+      success: true,
+      uploaded: result.affectedRows,
     });
   } catch (err) {
     console.error("UPLOAD ERROR:", err);
-    res.status(500).json({ message: "Upload crashed" });
+
+    res.status(500).json({
+      message: err.message || "Upload crashed",
+    });
   }
 };
 
@@ -531,26 +547,50 @@ const saveTimetableController = async (req, res) => {
 
 const generateTimetableController = saveTimetableController;
 
-const getTimetableController = (req, res) => {
-  const { year, semester } = req.query;
-  const department = normalizeDepartment(req.query.department);
-  const sql = `
-    SELECT day, time, subject, faculty
-    FROM timetable_slots
-    WHERE department = ? AND year = ? AND semester = ?
-    ORDER BY FIELD(day,'MON','TUE','WED','THU','FRI','SAT'), time
-  `;
+const getTimetableController = async (req, res) => {
+  try {
+    const department = normalizeDepartment(req.query.department);
+    const year = Number(req.query.year);
+    const semester = Number(req.query.semester);
 
-  db.query(sql, [department, year, semester], (err, rows) => {
-    if (err) {
-      console.error(err);
-      return res.status(500).json({ message: "Fetch failed" });
+    console.log("TIMETABLE FETCH:", {
+      department,
+      year,
+      semester,
+    });
+
+    if (!department || !year || !semester) {
+      return res.status(400).json({
+        message: "Department, year and semester are required",
+      });
     }
 
-    res.json({ success: true, slots: rows });
-  });
-};
+    const [rows] = await db.query(
+      `
+      SELECT day, time, subject, faculty
+      FROM timetable_slots
+      WHERE department = ? 
+        AND year = ? 
+        AND semester = ?
+      ORDER BY FIELD(day,'MON','TUE','WED','THU','FRI','SAT'), time
+      `,
+      [department, year, semester]
+    );
 
+    console.log("TIMETABLE ROWS FOUND:", rows.length);
+
+    res.json({
+      success: true,
+      slots: rows,
+    });
+  } catch (err) {
+    console.error("TIMETABLE FETCH ERROR:", err);
+    res.status(500).json({
+      message: "Failed to load timetable",
+      error: err.message,
+    });
+  }
+};
 const getSavedTimetablesController = async (_req, res) => {
   try {
     const rows = await query(`

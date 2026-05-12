@@ -9,7 +9,7 @@ body {
 }
 
 .sidebar {
-  width: 220px;
+  width: 170px;
   background: #6a1bb1;
   color: white;
   min-height: 100vh;
@@ -36,4 +36,135 @@ body {
 .content {
   flex: 1;
   padding: 30px;
+}
+
+.tt-cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  min-height: 55px;
+}
+
+.slot-subject {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.slot-batch {
+  font-size: 9px;
+  font-weight: 600;
+  color: #2563eb;
+  text-align: center;
+}
+
+.slot-faculty {
+  font-size: 8px;
+  color: #6b7280;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.timetable-wrap {
+  width: 100%;
+  overflow-x: auto;
+  padding-bottom: 10px;
+}
+
+.timetable-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  background: white;
+}
+
+.timetable-table th,
+.timetable-table td {
+  border: 1px solid #d6d6d6;
+  text-align: center;
+  vertical-align: top;
+  padding: 6px;
+}
+
+.timetable-table th {
+  background: #153a67;
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
+  height: 55px;
+}
+
+.day-label {
+  width: 70px;
+  background: #eef3f8;
+  color: #153a67;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.slot {
+  height: 135px;
+  background: #fffdfa;
+}
+
+.slot-empty {
+  background: #ffffff;
+}
+
+.slot-break,
+.slot-lunch {
+  background: #eef3f8;
+  color: #4b6178;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.tt-cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+}
+
+.slot-subject {
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #111827;
+}
+
+.slot-batch {
+  font-size: 8px;
+  font-weight: 600;
+  color: #2563eb;
+}
+
+.slot-faculty {
+  font-size: 7px;
+  color: #6b7280;
+  line-height: 1.2;
+}
+
+.slot-selected {
+  outline: 3px solid #2563eb;
+}
+
+.slot-clickable {
+  cursor: pointer;
+}
+
+.slot-clickable:hover {
+  background: #eef4ff;
+}
+
+.slot-batch div {
+  margin-bottom: 2px;
+}
+
+.slot-faculty div {
+  margin-bottom: 2px;
 }

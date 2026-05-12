@@ -222,7 +222,7 @@ const loginController = async (req, res) => {
       return res.status(400).json({ message: "email & password required" });
     }
 
-    await ensureSeedUsers();
+        await ensureUsersTable();
 
     const rows = await query(
       `SELECT user_id, name, email, password, role, department, faculty_name

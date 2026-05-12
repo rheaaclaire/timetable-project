@@ -24,17 +24,9 @@ function Login({ onLogin }) {
       console.log("LOGIN RESPONSE:", res.data);
 
       if (res.data.success && res.data.user) {
-        localStorage.setItem("user", JSON.stringify(res.data.user));
 
         onLogin(res.data.user);
 
-        if (res.data.user.role === "admin") {
-          window.location.href = "/admin";
-        } else if (res.data.user.role === "teacher") {
-          window.location.href = "/teacher";
-        } else {
-          window.location.href = "/student";
-        }
       } else {
         setMessage("Invalid login response");
       }

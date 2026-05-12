@@ -2,9 +2,25 @@ const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
 
+async function ensureCalendarTable() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS academic_calendar (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      title VARCHAR(255) NOT NULL,
+      description TEXT NULL,
+      event_date DATE NOT NULL,
+      event_type VARCHAR(50) NOT NULL,
+      created_by VARCHAR(100) DEFAULT 'admin',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+}
+
 // GET all calendar events
 router.get("/", async (req, res) => {
   try {
+    await ensureCalendarTable();
+
     const [rows] = await db.query(`
       SELECT * FROM academic_calendar
       ORDER BY event_date ASC
@@ -13,13 +29,18 @@ router.get("/", async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error("Calendar GET error:", err);
-    res.status(500).json({ message: "Failed to fetch calendar events" });
+    res.status(500).json({
+      message: "Failed to fetch calendar events",
+      error: err.message,
+    });
   }
 });
 
 // ADD calendar event
 router.post("/", async (req, res) => {
   try {
+    await ensureCalendarTable();
+
     console.log("BODY RECEIVED:", req.body);
 
     const body = req.body || {};
@@ -62,6 +83,8 @@ router.post("/", async (req, res) => {
 // DELETE calendar event
 router.delete("/:id", async (req, res) => {
   try {
+    await ensureCalendarTable();
+
     const { id } = req.params;
 
     await db.query("DELETE FROM academic_calendar WHERE id = ?", [id]);
@@ -69,7 +92,10 @@ router.delete("/:id", async (req, res) => {
     res.json({ message: "Event deleted successfully" });
   } catch (err) {
     console.error("Calendar DELETE error:", err);
-    res.status(500).json({ message: "Failed to delete calendar event" });
+    res.status(500).json({
+      message: "Failed to delete calendar event",
+      error: err.message,
+    });
   }
 });
 
