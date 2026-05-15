@@ -1,6 +1,12 @@
 ﻿const db = require("../config/db");
 const XLSX = require("xlsx");
-const { generateEmptySlots, generateFourthYearSlots, generateTimetable } = require("../services/slotEngine");
+
+const {
+  generateEmptySlots,
+  generateFourthYearSlots,
+  generateTimetable
+} = require("../services/slotEngine");
+
 const { generateMechTimetable } = require("../services/mechSlotEngine");
 const { generateCompTimetable } = require("../services/compSlotEngine");
 
@@ -13,7 +19,8 @@ function normalizeDepartment(value) {
     "CIVIL",
     "COMP",
     "COMP 1",
-    "COMP 2"
+    "COMP 2",
+    "SCIENCE_HUMANITIES"
   ];
 
   if (!allowedDepartments.includes(dept)) {
@@ -23,40 +30,110 @@ function normalizeDepartment(value) {
   return dept;
 }
 
-function inferYearFromSemester(semester) {
-  const numericSemester = Number(semester);
-  if (!numericSemester) return null;
-  return Math.ceil(numericSemester / 2);
+function getValue(row, possibleKeys) {
+  for (const key of possibleKeys) {
+    if (row[key] !== undefined && row[key] !== null && row[key] !== "") {
+      return row[key];
+    }
+  }
+  return null;
 }
 
-function normalizeUploadRows(rows) {
+function normalizeUploadRows(rows, selectedDepartment, selectedYear, selectedSemester) {
   const values = [];
 
   for (const row of rows) {
-    const department = normalizeDepartment(row.department);
-    const year = Number(row.year) || inferYearFromSemester(row.semester);
-    const semester = Number(row.semester);
-    const faculty = row.faculty || null;
+    const department = selectedDepartment;
+    const year = Number(selectedYear);
+    const semester = Number(selectedSemester);
 
-    if (row.subject && row.hours && row.type) {
+    const subject = getValue(row, [
+      "subject",
+      "Subject",
+      "SUBJECT",
+      "name",
+      "Name",
+      "COURSE",
+      "Course",
+      "course",
+      "Subject Name",
+      "subject_name"
+    ]);
+
+    const hours = getValue(row, [
+      "hours",
+      "Hours",
+      "HOURS",
+      "hours_per_week",
+      "Hours Per Week",
+      "hoursPerWeek",
+      "Hrs",
+      "hrs"
+    ]);
+
+    const type = getValue(row, [
+      "type",
+      "Type",
+      "TYPE",
+      "Subject Type",
+      "subject_type"
+    ]);
+
+    const faculty = getValue(row, [
+      "faculty",
+      "Faculty",
+      "FACULTY",
+      "teacher",
+      "Teacher",
+      "Faculty Name"
+    ]);
+
+    if (subject && hours && type) {
       values.push([
         department,
         year,
         semester,
-        row.subject,
-        Number(row.hours),
-        row.type,
-        faculty
+        subject,
+        Number(hours),
+        type,
+        faculty || null
       ]);
       continue;
     }
 
-    if (!row.course) continue;
+    const course = getValue(row, [
+      "course",
+      "Course",
+      "COURSE",
+      "subject",
+      "Subject",
+      "SUBJECT"
+    ]);
+
+    if (!course) continue;
+
+    const theory =
+      Number(getValue(row, ["theory", "Theory", "THEORY"])) || 0;
+
+    const practical =
+      Number(
+        getValue(row, [
+          "practical",
+          "Practical",
+          "PRACTICAL",
+          "lab",
+          "Lab",
+          "LAB"
+        ])
+      ) || 0;
+
+    const tutorial =
+      Number(getValue(row, ["tutorial", "Tutorial", "TUTORIAL"])) || 0;
 
     const derivedEntries = [
-      { name: row.course, hours: Number(row.theory), type: "THEORY" },
-      { name: `${row.course} Lab`, hours: Number(row.practical), type: "LAB" },
-      { name: `${row.course} Tutorial`, hours: Number(row.tutorial), type: "TUTORIAL" }
+      { name: course, hours: theory, type: "THEORY" },
+      { name: `${course} Lab`, hours: practical, type: "LAB" },
+      { name: `${course} Tutorial`, hours: tutorial, type: "TUTORIAL" }
     ];
 
     for (const entry of derivedEntries) {
@@ -69,7 +146,7 @@ function normalizeUploadRows(rows) {
         entry.name,
         entry.hours,
         entry.type,
-        faculty
+        faculty || null
       ]);
     }
   }
@@ -85,51 +162,67 @@ const uploadSubjectsController = (req, res) => {
       return res.status(400).json({ message: "No file uploaded" });
     }
 
+    const uploadDepartment = normalizeDepartment(req.body.department);
+    const uploadYear = Number(req.body.year);
+    const uploadSemester = Number(req.body.semester);
+
+    if (!uploadDepartment || !uploadYear || !uploadSemester) {
+      return res.status(400).json({
+        message: "Department, year and semester are required"
+      });
+    }
+
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet);
-    const uploadDepartment = normalizeDepartment(req.body.department);
 
     if (!rows.length) {
       return res.status(400).json({ message: "Excel file empty" });
     }
 
-    const values = normalizeUploadRows(rows);
-    const valuesWithDepartment = values.map((row) => [uploadDepartment, ...row.slice(1)]);
+    const values = normalizeUploadRows(
+      rows,
+      uploadDepartment,
+      uploadYear,
+      uploadSemester
+    );
 
-    if (!valuesWithDepartment.length) {
+    if (!values.length) {
       return res.status(400).json({
         message: "Excel columns did not match the expected format"
       });
     }
 
-    const department = valuesWithDepartment[0][0];
-    const year = valuesWithDepartment[0][1];
-    const semester = valuesWithDepartment[0][2];
     const sql = `
       INSERT INTO subjects
       (department, year, semester, name, hours_per_week, type, faculty)
       VALUES ?
     `;
 
-    db.query("DELETE FROM subjects WHERE department = ? AND year = ? AND semester = ?", [department, year, semester], (deleteError) => {
-      if (deleteError) {
-        console.error("DELETE ERROR:", deleteError);
-        return res.status(500).json({ message: "Failed to replace old subjects" });
-      }
-
-      db.query(sql, [valuesWithDepartment], (insertError, result) => {
-        if (insertError) {
-          console.error("INSERT ERROR:", insertError);
-          return res.status(500).json({ message: "Insert failed" });
+    db.query(
+      "DELETE FROM subjects WHERE department = ? AND year = ? AND semester = ?",
+      [uploadDepartment, uploadYear, uploadSemester],
+      (deleteError) => {
+        if (deleteError) {
+          console.error("DELETE ERROR:", deleteError);
+          return res.status(500).json({
+            message: "Failed to replace old subjects"
+          });
         }
 
-        res.json({
-          success: true,
-          uploaded: result.affectedRows
+        db.query(sql, [values], (insertError, result) => {
+          if (insertError) {
+            console.error("INSERT ERROR:", insertError);
+            return res.status(500).json({ message: "Insert failed" });
+          }
+
+          res.json({
+            success: true,
+            uploaded: result.affectedRows
+          });
         });
-      });
-    });
+      }
+    );
   } catch (err) {
     console.error("UPLOAD ERROR:", err);
     res.status(500).json({ message: "Upload crashed" });
@@ -171,11 +264,11 @@ const generateTimetableController = (req, res) => {
   const subjectSql = `
     SELECT 
       name, 
-     hours_per_week AS hoursPerWeek, 
+      hours_per_week AS hoursPerWeek, 
       type, 
       faculty
-  FROM subjects
-  WHERE department = ? AND year = ? AND semester = ?
+    FROM subjects
+    WHERE department = ? AND year = ? AND semester = ?
   `;
 
   db.query(subjectSql, [department, year, semester], (err, subjects) => {
@@ -203,25 +296,35 @@ const generateTimetableController = (req, res) => {
         return res.status(500).json({ message: "Faculty lock fetch failed" });
       }
 
-      const lockedFacultyBookings = lockedRows.map((slot) => {
-        return `${slot.faculty}__${slot.day}__${slot.time}`;
-      });
+      const lockedFacultyBookings = new Set();
+
+lockedRows.forEach((slot) => {
+  if (!slot.faculty) return;
+
+  const facultyList = String(slot.faculty)
+    .split("/")
+    .map((f) => f.trim())
+    .filter(Boolean);
+
+  facultyList.forEach((faculty) => {
+    const key = `${faculty}__${slot.day}__${slot.time}`;
+    lockedFacultyBookings.add(key);
+  });
+});
 
       let timetable;
 
-if (department === "MECH") {
-  timetable = generateMechTimetable(subjects, lockedFacultyBookings);
-} else if (department === "COMP 1" || department === "COMP 2") {
-  timetable = generateCompTimetable(subjects, year, lockedFacultyBookings);
-} else {
-  timetable = generateTimetable(
-    subjects,
-    Number(year) === 4 ? generateFourthYearSlots() : generateEmptySlots(),
-    {
-      lockedFacultyBookings
-    }
-  );
-}
+      if (department === "MECH") {
+        timetable = generateMechTimetable(subjects, lockedFacultyBookings);
+      } else if (department === "COMP 1" || department === "COMP 2") {
+        timetable = generateCompTimetable(subjects, year, lockedFacultyBookings);
+      } else {
+        timetable = generateTimetable(
+          subjects,
+          Number(year) === 4 ? generateFourthYearSlots() : generateEmptySlots(),
+          { lockedFacultyBookings }
+        );
+      }
 
       if (!timetable) {
         return res.status(400).json({
@@ -230,57 +333,88 @@ if (department === "MECH") {
       }
 
       const rowsToInsert = timetable
-        .filter((slot) => slot.subject && slot.subject !== "BREAK" && slot.subject !== "LUNCH")
-        .map((slot) => [department, year, semester, slot.day, slot.time, slot.subject, slot.faculty || null]);
-        const clashMap = new Map();
-const clashes = [];
+        .filter(
+          (slot) =>
+            slot.subject &&
+            slot.subject !== "BREAK" &&
+            slot.subject !== "LUNCH"
+        )
+        .map((slot) => [
+          department,
+          year,
+          semester,
+          slot.day,
+          slot.time,
+          slot.subject,
+          slot.faculty || null
+        ]);
 
-for (const row of rowsToInsert) {
-  const [dept, yr, sem, day, time, subject, faculty] = row;
+      const clashMap = new Map();
+      const clashes = [];
 
-  if (!faculty) continue;
+      for (const row of rowsToInsert) {
+        const [, , , day, time, subject, faculty] = row;
 
-  const key = `${faculty}_${day}_${time}`;
+        if (!faculty) continue;
 
-  if (clashMap.has(key)) {
-    clashes.push({
-      faculty,
-      day,
-      time,
-      firstSubject: clashMap.get(key),
-      secondSubject: subject
-    });
-  } else {
-    clashMap.set(key, subject);
-  }
-}
+        const facultyList = String(faculty)
+          .split("/")
+          .map((f) => f.trim())
+          .filter(Boolean);
 
-if (clashes.length > 0) {
-  return res.status(400).json({
-    message: "Teacher clash detected",
-    clashes
-  });
-}
+        for (const singleFaculty of facultyList) {
+          const key = `${singleFaculty}_${day}_${time}`;
 
-      db.query("DELETE FROM timetable_slots WHERE department = ? AND year = ? AND semester = ?", [department, year, semester], (deleteError) => {
-        if (deleteError) {
-          console.error("DELETE ERROR:", deleteError);
-          return res.status(500).json({ message: "Failed to replace old timetable" });
-        }
-
-        db.query(
-          `INSERT INTO timetable_slots (department, year, semester, day, time, subject, faculty) VALUES ?`,
-          [rowsToInsert],
-          (insertError, result) => {
-            if (insertError) {
-              console.error("INSERT ERROR:", insertError);
-              return res.status(500).json({ message: "Insert failed" });
-            }
-
-            res.json({ success: true, inserted: result.affectedRows });
+          if (clashMap.has(key)) {
+            clashes.push({
+              faculty: singleFaculty,
+              day,
+              time,
+              firstSubject: clashMap.get(key),
+              secondSubject: subject
+            });
+          } else {
+            clashMap.set(key, subject);
           }
-        );
-      });
+        }
+      }
+
+      if (clashes.length > 0) {
+        return res.status(400).json({
+          message: "Teacher clash detected",
+          clashes
+        });
+      }
+
+      db.query(
+        "DELETE FROM timetable_slots WHERE department = ? AND year = ? AND semester = ?",
+        [department, year, semester],
+        (deleteError) => {
+          if (deleteError) {
+            console.error("DELETE ERROR:", deleteError);
+            return res.status(500).json({
+              message: "Failed to replace old timetable"
+            });
+          }
+
+          db.query(
+            `
+            INSERT INTO timetable_slots 
+            (department, year, semester, day, time, subject, faculty) 
+            VALUES ?
+            `,
+            [rowsToInsert],
+            (insertError, result) => {
+              if (insertError) {
+                console.error("INSERT ERROR:", insertError);
+                return res.status(500).json({ message: "Insert failed" });
+              }
+
+              res.json({ success: true, inserted: result.affectedRows });
+            }
+          );
+        }
+      );
     });
   });
 };
@@ -288,6 +422,7 @@ if (clashes.length > 0) {
 const getTimetableController = (req, res) => {
   const { year, semester } = req.query;
   const department = normalizeDepartment(req.query.department);
+
   const sql = `
     SELECT day, time, subject, faculty
     FROM timetable_slots
@@ -315,20 +450,22 @@ const getTeacherTimetableController = (req, res) => {
   const sql = `
     SELECT department, year, semester, day, time, subject, faculty
     FROM timetable_slots
-    WHERE faculty = ?
+    WHERE faculty LIKE ?
     ORDER BY FIELD(day,'MON','TUE','WED','THU','FRI','SAT'), time
   `;
 
-  db.query(sql, [faculty], (err, rows) => {
+  db.query(sql, [`%${faculty}%`], (err, rows) => {
     if (err) {
       console.error("TEACHER TIMETABLE ERROR:", err);
-      return res.status(500).json({ message: "Teacher timetable fetch failed" });
+      return res.status(500).json({
+        message: "Teacher timetable fetch failed"
+      });
     }
 
     res.json({
       success: true,
       faculty,
-      timetable: rows
+      slots: rows
     });
   });
 };
